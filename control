@@ -1,0 +1,11 @@
+Package: com.ps.swipekey
+Replaces: org.thebigboss.swipekey
+Name: SwipeKey [Beta]
+Depends: mobilesubstrate, preferenceloader, firmware (>= 5.0)
+Version: 1.0
+Architecture: iphoneos-arm
+Description: Swipe across keyboard for continuous typing.
+Maintainer: PoomSmart
+Author: PoomSmart
+Section: Tweaks
+Depiction: http://PoomSmart.github.io/repo/swipekey/index.html
