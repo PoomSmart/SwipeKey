@@ -1,46 +1,7 @@
+#define CHECK_TARGET
 #import "../PS.h"
 
-@interface UIKBTree : NSObject
-@property NSInteger state;
-@property NSInteger type;
-@property NSInteger visualStyle;
-@property NSInteger interactionType;
-@property NSInteger displayType;
-@property NSInteger variantType;
-@property int rendering;
-@property BOOL ghost;
-- (NSString *)name;
-@end
-
-@interface UIKBKeyplaneView : UIView
-@end
-
-@interface UIKeyboardTouchInfo : NSObject
-@property(retain, nonatomic) UITouch *touch;
-@property(retain, nonatomic) UIKBTree* key;
-@property(retain, nonatomic) UIKBTree *keyplane;
-@property(retain, nonatomic) UIKBTree *slidOffKey;
-@property(assign, nonatomic) CGPoint initialPoint;
-@property(assign, nonatomic) CGPoint initialDragPoint;
-@property int stage;
-@property BOOL dragged;
-@property BOOL maySuppressUpAction;
-@end
-
-@interface UIKeyboardLayoutStar : UIView
-@property(retain, nonatomic) UIKBTree *activeKey;
-- (BOOL)touchPassesDragThreshold:(UIKeyboardTouchInfo *)touchInfo;
-- (UIKeyboardTouchInfo *)infoForTouch:(UITouch *)touch;
-- (UIKeyboardTouchInfo *)generateInfoForTouch:(UITouch *)touch;
-- (UIKBTree *)keyHitTest:(CGPoint)point;
-- (void)touchDown:(UITouch *)touch;
-- (void)touchUp:(UITouch *)touch executionContext:(id)context;
-- (void)touchUp:(UITouch *)touch;
-- (void)completeHitTestForTouchDragged:(UIKeyboardTouchInfo *)touchInfo hitKey:(UIKBTree *)key;
-- (int)stateForKey:(UIKBTree *)key;
-@end
-
-BOOL enabled;
+BOOL enabled = YES;
 NSInteger popupState = isiOS7Up ? 4 : 1;
 NSInteger normalState = isiOS7Up ? 2 : 4;
 
@@ -51,9 +12,34 @@ NSArray *whitelist()
 
 %hook UIKeyboardLayoutStar
 
-%group iOS7Up
+%group iOS9Up
 
-- (void)touchDragged:(UITouch *)touch executionContext:(id)context
+// shouldRetestTouchDraggedFromKey
+// performHitTestForTouchInfo:touchStage:executionContextPassingUIKBTree:
+- (void)touchDragged:(UITouch *)touch executionContext:(UIKeyboardTaskExecutionContext *)context
+{
+	if (enabled) {
+		UIKeyboardTouchInfo *touchInfo = [self infoForTouch:touch];
+		UIKBTree *key = [self keyHitTest:[touchInfo.touch locationInView:self]];
+		BOOL isOut = [self touchPassesDragThreshold:touchInfo];
+		BOOL filter = ![whitelist() containsObject:key.name];
+		BOOL noPopup = self.activeKey.state != 16;
+		if (isOut && filter && noPopup && key.state == normalState) {
+			NSLog(@"%@", touchInfo);
+			[self completeHitTestForTouchDragged:touchInfo hitKey:touchInfo.key];
+			[self touchUp:touch executionContext:context];
+			[self touchDown:touch];
+			return;
+		}
+	}
+	%orig;
+}
+
+%end
+
+%group iOS78
+
+- (void)touchDragged:(UITouch *)touch executionContext:(UIKeyboardTaskExecutionContext *)context
 {
 	if (enabled) {
 		UIKeyboardTouchInfo *touchInfo = [self infoForTouch:touch];
@@ -91,10 +77,11 @@ NSArray *whitelist()
 	%orig;
 }
 
-
 %end
 
 %end
+
+#if SIMULATOR == 0
 
 CFStringRef PreferencesNotification = CFSTR("com.PS.SwipeKey.prefs");
 
@@ -111,24 +98,21 @@ static void prefsChanged(CFNotificationCenterRef center, void *observer, CFStrin
 	prefs();
 }
 
+#endif
+
 %ctor
 {
-	NSArray *args = [[NSClassFromString(@"NSProcessInfo") processInfo] arguments];
-	NSUInteger count = args.count;
-	if (count != 0) {
-		NSString *executablePath = args[0];
-		if (executablePath) {
-			BOOL isApplication = [executablePath rangeOfString:@"/Application"].location != NSNotFound;
-			BOOL isSpringBoard = [[executablePath lastPathComponent] isEqualToString:@"SpringBoard"];
-			if (isApplication || isSpringBoard) {
-				CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, &prefsChanged, PreferencesNotification, NULL, CFNotificationSuspensionBehaviorCoalesce);
-				prefs();
-				if (isiOS7Up) {
-					%init(iOS7Up);
-				} else {
-					%init(iOS6Down);
-				}
-			}
+	if (isTarget(TargetTypeGUINoExtension)) {
+		#if SIMULATOR == 0
+		CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, &prefsChanged, PreferencesNotification, NULL, CFNotificationSuspensionBehaviorCoalesce);
+		prefs();
+		#endif
+		if (isiOS9Up) {
+			%init(iOS9Up);
+		} if (isiOS7Up) {
+			%init(iOS78);
+		} else {
+			%init(iOS6Down);
 		}
 	}
 }
